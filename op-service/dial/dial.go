@@ -34,10 +34,7 @@ func DialEthClientWithTimeout(ctx context.Context, timeout time.Duration, log lo
 
 // DialRollupClientWithTimeout attempts to dial the RPC provider using the provided URL.
 // If the dial doesn't complete within timeout seconds, this method will return an error.
-func DialRollupClientWithTimeout(ctx context.Context, timeout time.Duration, log log.Logger, url string, callerOpts ...client.RPCOption) (*sources.RollupClient, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
+func DialRollupClientWithTimeout(ctx context.Context, log log.Logger, url string, callerOpts ...client.RPCOption) (*sources.RollupClient, error) {
 	opts := []client.RPCOption{
 		client.WithFixedDialBackoff(defaultRetryTime),
 		client.WithDialAttempts(defaultRetryCount),
