@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 func TestWithdrawalRoot(gt *testing.T) {
@@ -25,11 +26,13 @@ func TestWithdrawalRoot(gt *testing.T) {
 	}()
 
 	bridge := sys.StandardBridge()
-	initialL1Balance := eth.OneThirdEther
 	initialL2Balance := eth.OneThirdEther
 
 	// l1User and l2User share same private key
-	l1User := sys.FunderL1.NewFundedEOA(initialL1Balance)
+	pk, err := crypto.GenerateKey()
+	require.NoError(err, "error generating key")
+	l1User := dsl.NewEOA(dsl.NewKey(t, pk), sys.L2EL)
+
 	l2User := l1User.AsEL(sys.L2EL) // Only receives funds via the deposit
 	sys.FunderL2.FundAtLeast(l2User, initialL2Balance)
 	withdrawalAmount := eth.OneHundredthEther
