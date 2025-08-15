@@ -2,10 +2,11 @@ package backend
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"sync"
+	"time"
 
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-sync-tester/metrics"
@@ -113,42 +114,49 @@ func (s *SyncTester) GetBlockReceipts(ctx context.Context, blockNrOrHash rpc.Blo
 		return nil, ErrNoReceipts
 	}
 
-	if receipts[0].BlockNumber.Uint64() > session.Latest {
+	if receipts[0].BlockNumber.Uint64() > session.CurrentState.Latest {
 		return nil, ethereum.NotFound
 	}
 
 	return receipts, nil
 }
 
-func (s *SyncTester) GetBlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error) {
+func (s *SyncTester) GetBlockByHash(ctx context.Context, hash common.Hash, fullTx bool) (json.RawMessage, error) {
 	session, err := s.fetchSession(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	block, err := s.elClient.BlockByHash(ctx, hash)
-	if err != nil {
+	var raw json.RawMessage
+	if err := s.elClient.Client().CallContext(ctx, &raw, "eth_getBlockByHash", hash, fullTx); err != nil {
 		return nil, err
 	}
-
-	if block.NumberU64() > session.Latest {
+	var head *types.Header
+	if err := json.Unmarshal(raw, &head); err != nil {
+		return nil, err
+	}
+	if head.Number.Uint64() > session.CurrentState.Latest {
 		return nil, ethereum.NotFound
 	}
-
-	return block, nil
+	return raw, nil
 }
 
-func (s *SyncTester) GetBlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error) {
+func (s *SyncTester) GetBlockByNumber(ctx context.Context, number rpc.BlockNumber, fullTx bool) (json.RawMessage, error) {
 	session, err := s.fetchSession(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	if number.Uint64() > session.Latest {
+	if number.Int64() > int64(session.CurrentState.Latest) {
 		return nil, ethereum.NotFound
 	}
 
-	return s.elClient.BlockByNumber(ctx, number)
+	var raw json.RawMessage
+	if err := s.elClient.Client().CallContext(ctx, &raw, "eth_getBlockByNumber", number, fullTx); err != nil {
+		return nil, err
+	}
+
+	time.Sleep(500 * time.Millisecond)
+	return raw, nil
 }
 
 func (s *SyncTester) ChainId(ctx context.Context) (eth.ChainID, error) {

@@ -93,11 +93,14 @@ func currentHeads(ctx context.Context, cfg *rollup.Config, l2 L2Chain) (*FindHea
 	if err != nil {
 		return nil, fmt.Errorf("failed to find the L2 head block: %w", err)
 	}
-	return &FindHeadsResult{
+
+	fhr := &FindHeadsResult{
 		Unsafe:    unsafe,
 		Safe:      safe,
 		Finalized: finalized,
-	}, nil
+	}
+
+	return fhr, nil
 }
 
 // FindL2Heads walks back from `start` (the previous unsafe L2 block) and finds

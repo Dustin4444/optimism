@@ -17,11 +17,12 @@ import (
 	sttypes "github.com/ethereum-optimism/optimism/op-sync-tester/synctester/backend/types"
 )
 
-type SyncTesterService struct {
+type SyncTester struct {
+	id      stack.SyncTesterID
 	service *synctester.Service
 }
 
-func (n *SyncTesterService) hydrate(system stack.ExtensibleSystem) {
+func (n *SyncTester) hydrate(system stack.ExtensibleSystem) {
 	require := system.T().Require()
 
 	for syncTesterID, chainID := range n.service.SyncTesters() {
@@ -35,14 +36,15 @@ func (n *SyncTesterService) hydrate(system stack.ExtensibleSystem) {
 			ID:           id,
 			Client:       rpcCl,
 		})
+
 		net := system.Network(chainID).(stack.ExtensibleNetwork)
 		net.AddSyncTester(front)
 	}
 }
 
-func WithSyncTesters(l2ELs []stack.L2ELNodeID) stack.Option[*Orchestrator] {
+func WithSyncTesters(syncTesterID stack.SyncTesterID, l2ELs []stack.L2ELNodeID) stack.Option[*Orchestrator] {
 	return stack.AfterDeploy(func(orch *Orchestrator) {
-		syncTesterID := stack.NewSyncTesterID("dev-sync-tester", l2ELs[0].ChainID())
+		//		syncTesterID := stack.NewSyncTesterID("dev-sync-tester", l2ELs[0].ChainID())
 		p := orch.P().WithCtx(stack.ContextWithID(orch.P().Ctx(), syncTesterID))
 
 		require := p.Require()
@@ -83,6 +85,7 @@ func WithSyncTesters(l2ELs []stack.L2ELNodeID) stack.Option[*Orchestrator] {
 			_ = srv.Stop(ctx)
 			logger.Info("Closed sync tester")
 		})
-		orch.syncTester = &SyncTesterService{service: srv}
+		orch.syncTester = &SyncTester{id: syncTesterID, service: srv}
+		orch.syncTesters.Set(syncTesterID, orch.syncTester)
 	})
 }

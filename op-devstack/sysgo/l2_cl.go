@@ -49,7 +49,7 @@ type L2CLNode struct {
 	cfg              *config.Config
 	p                devtest.P
 	logger           log.Logger
-	el               stack.L2ELNodeID
+	el               *stack.L2ELNodeID // Optional: nil when using SyncTester
 	userProxy        *tcpproxy.Proxy
 	interopProxy     *tcpproxy.Proxy
 }
@@ -71,7 +71,11 @@ func (n *L2CLNode) hydrate(system stack.ExtensibleSystem) {
 	})
 	l2Net := system.L2Network(stack.L2NetworkID(n.id.ChainID()))
 	l2Net.(stack.ExtensibleL2Network).AddL2CLNode(sysL2CL)
-	sysL2CL.(stack.LinkableL2CLNode).LinkEL(l2Net.L2ELNode(n.el))
+
+	// Only link to EL node if we have one (not when using SyncTester)
+	if n.el != nil {
+		sysL2CL.(stack.LinkableL2CLNode).LinkEL(l2Net.L2ELNode(*n.el))
+	}
 }
 
 func (n *L2CLNode) Start() {
@@ -143,7 +147,23 @@ func WithL2CLOption(opt L2CLOption) stack.Option[*Orchestrator] {
 	})
 }
 
-func WithL2CLNode(l2CLID stack.L2CLNodeID, isSequencer bool, indexingMode bool, l1CLID stack.L1CLNodeID, l1ELID stack.L1ELNodeID, l2ELID stack.L2ELNodeID) stack.Option[*Orchestrator] {
+// WithL2CLNodeWithL2EL is a backward-compatible function that accepts an L2EL node
+// This maintains the original API for existing code that uses L2EL nodes
+func WithL2CLNodeWithL2EL(l2CLID stack.L2CLNodeID, isSequencer bool, indexingMode bool, l1CLID stack.L1CLNodeID, l1ELID stack.L1ELNodeID, l2ELID stack.L2ELNodeID) stack.Option[*Orchestrator] {
+	return WithL2CLNode(l2CLID, isSequencer, indexingMode, l1CLID, l1ELID, l2ELID)
+}
+
+// WithL2CLNodeWithSyncTester is a convenience function that accepts a SyncTester
+// This allows configuring a CL node with a SyncTester instead of an L2EL node
+func WithL2CLNodeWithSyncTester(l2CLID stack.L2CLNodeID, isSequencer bool, indexingMode bool, l1CLID stack.L1CLNodeID, l1ELID stack.L1ELNodeID, syncTesterID stack.SyncTesterID) stack.Option[*Orchestrator] {
+	return WithL2CLNode(l2CLID, isSequencer, indexingMode, l1CLID, l1ELID, syncTesterID)
+}
+
+// WithL2CLNode configures an L2 CL node that can be connected to either an L2EL node or a SyncTester
+// The l2ELOrSyncTester parameter can be either stack.L2ELNodeID or stack.SyncTesterID
+// When using a SyncTester, the CL node will connect directly to the SyncTester endpoint
+// instead of relying on an L2EL node
+func WithL2CLNode(l2CLID stack.L2CLNodeID, isSequencer bool, indexingMode bool, l1CLID stack.L1CLNodeID, l1ELID stack.L1ELNodeID, l2ELOrSyncTester interface{}) stack.Option[*Orchestrator] {
 	return stack.AfterDeploy(func(orch *Orchestrator) {
 		p := orch.P().WithCtx(stack.ContextWithID(orch.P().Ctx(), l2CLID))
 
@@ -158,12 +178,32 @@ func WithL2CLNode(l2CLID stack.L2CLNodeID, isSequencer bool, indexingMode bool, 
 		l1CL, ok := orch.l1CLs.Get(l1CLID)
 		require.True(ok, "l1 CL node required")
 
-		l2EL, ok := orch.l2ELs.Get(l2ELID)
-		require.True(ok, "l2 EL node required")
-
+		// Handle either L2EL node or SyncTester
+		var l2EL *L2ELNode
+		var syncTesterID *stack.SyncTesterID
 		var depSet depset.DependencySet
-		if cluster, ok := orch.ClusterForL2(l2ELID.ChainID()); ok {
-			depSet = cluster.DepSet()
+		var useSyncTester bool
+
+		switch v := l2ELOrSyncTester.(type) {
+		case stack.L2ELNodeID:
+			l2EL, ok = orch.l2ELs.Get(v)
+			require.True(ok, "l2 EL node required")
+			if cluster, ok := orch.ClusterForL2(v.ChainID()); ok {
+				depSet = cluster.DepSet()
+			}
+		case stack.SyncTesterID:
+			syncTester, ok := orch.syncTesters.Get(v)
+			require.True(ok, "sync tester required")
+			syncTesterID = &syncTester.id
+
+			useSyncTester = true
+			// When using a SyncTester, we don't need an L2EL node
+			// The SyncTester will provide the L2 endpoint
+			if cluster, ok := orch.ClusterForL2(v.ChainID()); ok {
+				depSet = cluster.DepSet()
+			}
+		default:
+			require.Fail("l2ELOrSyncTester must be either stack.L2ELNodeID or stack.SyncTesterID")
 		}
 
 		jwtPath, jwtSecret := orch.writeDefaultJWT()
@@ -225,6 +265,15 @@ func WithL2CLNode(l2CLID stack.L2CLNodeID, isSequencer bool, indexingMode bool, 
 			}
 		}
 
+		// Determine the L2 endpoint based on whether we're using a SyncTester or L2EL
+		var l2EngineAddr string
+		if useSyncTester {
+			require.NotNil(orch.syncTester, "sync tester service required when using SyncTester")
+			l2EngineAddr = orch.syncTester.service.SyncTesterEndpoint(syncTesterID.ChainID())
+		} else {
+			l2EngineAddr = l2EL.authRPC
+		}
+
 		nodeCfg := &config.Config{
 			L1: &config.L1EndpointConfig{
 				L1NodeAddr:       l1EL.userRPC,
@@ -237,7 +286,7 @@ func WithL2CLNode(l2CLID stack.L2CLNodeID, isSequencer bool, indexingMode bool, 
 				CacheSize:        0, // auto-adjust to sequence window
 			},
 			L2: &config.L2EndpointConfig{
-				L2EngineAddr:      l2EL.authRPC,
+				L2EngineAddr:      l2EngineAddr,
 				L2EngineJWTSecret: jwtSecret,
 			},
 			Beacon: &config.L1BeaconEndpointConfig{
@@ -288,7 +337,11 @@ func WithL2CLNode(l2CLID stack.L2CLNodeID, isSequencer bool, indexingMode bool, 
 			cfg:    nodeCfg,
 			logger: logger,
 			p:      p,
-			el:     l2ELID,
+		}
+
+		// Set the EL field only if we have an L2EL node
+		if !useSyncTester {
+			l2CLNode.el = &l2EL.id
 		}
 		require.True(orch.l2CLs.SetIfMissing(l2CLID, l2CLNode), "must not already exist")
 		l2CLNode.Start()

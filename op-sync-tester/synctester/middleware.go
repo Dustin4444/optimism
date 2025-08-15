@@ -64,14 +64,22 @@ func parseSession(r *http.Request, log log.Logger) (*http.Request, error) {
 		}
 		session := &backend.Session{
 			SessionID: sessionID,
-			Latest:    latest,
-			Safe:      safe,
-			Finalized: finalized,
+			CurrentState: backend.FCUState{
+				Latest:    latest,
+				Safe:      safe,
+				Finalized: finalized,
+			},
+			InitialState: backend.FCUState{
+				Latest:    latest,
+				Safe:      safe,
+				Finalized: finalized,
+			},
 		}
 		ctx := backend.WithSession(r.Context(), session)
 		// remove uuid path for routing
 		r.URL.Path = "/" + strings.Join(segments[:3], "/")
 		r = r.WithContext(ctx)
 	}
+
 	return r, nil
 }

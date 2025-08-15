@@ -135,7 +135,7 @@ func DefaultMinimalSystemWithSyncTester(dest *DefaultMinimalSystemWithSyncTester
 		ids.L2EL,
 	}))
 
-	opt.Add(WithSyncTesters([]stack.L2ELNodeID{ids.L2EL}))
+	opt.Add(WithSyncTesters(ids.SyncTester, []stack.L2ELNodeID{ids.L2EL}))
 
 	opt.Add(stack.Finally(func(orch *Orchestrator) {
 		*dest = ids
