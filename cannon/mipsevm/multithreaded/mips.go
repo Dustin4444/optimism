@@ -211,6 +211,12 @@ func (m *InstrumentedState) handleSyscall() error {
 		} else {
 			v0 = exec.FdEventFd
 		}
+	case arch.SysPrctl:
+		// TODO: if features....
+		const PR_SET_VMA = 0x53564d41
+		if a0 != PR_SET_VMA {
+			m.handleUnrecognizedSyscall(syscallNum)
+		}
 	default:
 		// These syscalls have the same values on 64-bit. So we use if-stmts here to avoid "duplicate case" compiler error for the cannon64 build
 		if arch.IsMips32 && (syscallNum == arch.SysFstat64 || syscallNum == arch.SysStat64 || syscallNum == arch.SysLlseek) {
