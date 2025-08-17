@@ -47,6 +47,7 @@ check-custom-chains: op-program-host
 	./bin/op-program configs check-custom-chains
 
 reproducible-prestate: check-custom-chains
+	@docker build --build-arg GO_VERSION=1.25.0-alpine3.21 --build-arg EXPORT_TARGET=go25  --output ./bin/ --progress plain -f Dockerfile.repro ../
 	@docker build --build-arg GO_VERSION=1.24.2-alpine3.21 --build-arg EXPORT_TARGET=next  --output ./bin/ --progress plain -f Dockerfile.repro ../
 	@docker build --build-arg GO_VERSION=1.23.8-alpine3.21 --build-arg EXPORT_TARGET=current --output ./bin/ --progress plain -f Dockerfile.repro ../
 	@echo "-------------------- Production Prestates --------------------"
@@ -55,10 +56,14 @@ reproducible-prestate: check-custom-chains
 	@echo "\n-------------------- Experimental Prestates --------------------"
 	@echo "\nCannon64Next Absolute prestate hash: "
 	@cat ./bin/prestate-proof-mt64Next.json | jq -r .pre
+	@echo "\nCannon64Go25 Absolute prestate hash: "
+	@cat ./bin/prestate-proof-mt64Go25.json | jq -r .pre
 	@echo "\nCannonInterop Absolute prestate hash: "
 	@cat ./bin/prestate-proof-interop.json | jq -r .pre
 	@echo "\nCannonInteropNext Absolute prestate hash: "
 	@cat ./bin/prestate-proof-interopNext.json | jq -r .pre
+	@echo "\nCannonInteropGo25 Absolute prestate hash: "
+	@cat ./bin/prestate-proof-interopGo25.json | jq -r .pre
 	@echo
 .PHONY: reproducible-prestate
 
@@ -140,9 +145,13 @@ analyze-op-program-client-current:
 analyze-op-program-client-next:
 	./scripts/run-static-analysis.sh ./vm-profiles/cannon-multithreaded-64-next.yaml ./compatibility-test/baseline-cannon-multithreaded-64-next.json
 
+analyze-op-program-client-go25:
+	./scripts/run-static-analysis.sh ./vm-profiles/cannon-multithreaded-64-next.yaml ./compatibility-test/baseline-cannon-multithreaded-64-go25.json
+
 run-vm-compat:
-	@docker build --build-arg GO_VERSION=1.23.8-alpine3.21 --build-arg VM_TARGET=current --progress plain -f Dockerfile.vmcompat ../
-	@docker build --build-arg GO_VERSION=1.24.2-alpine3.21 --build-arg VM_TARGET=next --progress plain -f Dockerfile.vmcompat ../
+	#@docker build --build-arg GO_VERSION=1.23.8-alpine3.21 --build-arg VM_TARGET=current --progress plain -f Dockerfile.vmcompat ../
+	#@docker build --build-arg GO_VERSION=1.24.2-alpine3.21 --build-arg VM_TARGET=next --progress plain -f Dockerfile.vmcompat ../
+	@docker build --build-arg GO_VERSION=1.25.0-alpine3.21 --build-arg VM_TARGET=go25 --progress plain -f Dockerfile.vmcompat ../
 
 .PHONY: \
 	op-program \

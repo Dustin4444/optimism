@@ -68,6 +68,18 @@ COPY --from=builder /app/op-program/bin/meta-interopNext.json .
 COPY --from=builder /app/op-program/bin/prestate-interopNext.bin.gz .
 COPY --from=builder /app/op-program/bin/prestate-proof-interopNext.json .
 
+FROM scratch AS export-go25
+# Cannon64 Go25 VM files
+COPY --from=builder /app/op-program/bin/op-program-client64.elf ./op-program-client-go2564.elf
+COPY --from=builder /app/op-program/bin/meta-mt64Go25.json .
+COPY --from=builder /app/op-program/bin/prestate-mt64Go25.bin.gz .
+COPY --from=builder /app/op-program/bin/prestate-proof-mt64Go25.json .
+# Interop Go25 files
+COPY --from=builder ./app/op-program/bin/op-program-client-interop.elf ./op-program-client-interopGo25.elf
+COPY --from=builder /app/op-program/bin/meta-interopGo25.json .
+COPY --from=builder /app/op-program/bin/prestate-interopGo25.bin.gz .
+COPY --from=builder /app/op-program/bin/prestate-proof-interopGo25.json .
+
 # Exports files to the specified output location.
 # Writing files to host requires buildkit to be enabled.
 # e.g. `BUILDKIT=1 docker build ...`

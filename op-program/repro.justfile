@@ -56,8 +56,11 @@ prestate TYPE CLIENT_SUFFIX PRESTATE_SUFFIX: (client TYPE CLIENT_SUFFIX PRESTATE
 
 build-mt64: (prestate "multithreaded64-4" "64" "-mt64")
 build-mt64Next: (prestate "multithreaded64-5" "64" "-mt64Next")
+build-mt64Go25: (prestate "multithreaded64-5" "64" "-mt64Go25")
 build-interop: (prestate "multithreaded64-4" "-interop" "-interop")
 build-interopNext: (prestate "multithreaded64-5" "-interop" "-interopNext")
+build-interopGo25: (prestate "multithreaded64-5" "-interop" "-interopGo25")
 
 build-current: build-mt64 build-interop
 build-next: build-mt64Next build-interopNext
+build-go25: build-mt64Go25 build-interopGo25

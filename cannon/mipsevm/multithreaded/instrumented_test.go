@@ -44,6 +44,32 @@ func TestInstrumentedState_Hello(t *testing.T) {
 	})
 }
 
+func TestInstrumentedState_Keccak(t *testing.T) {
+	runTestAcrossVms(t, "Keccak", func(t *testing.T, vmFactory VMFactory[*State], goTarget testutil.GoTarget) {
+		state, meta := testutil.LoadELFProgram(t, testutil.ProgramPath("keccak", goTarget), CreateInitialState)
+
+		var stdOutBuf, stdErrBuf bytes.Buffer
+		us := vmFactory(state, nil, io.MultiWriter(&stdOutBuf, os.Stdout), io.MultiWriter(&stdErrBuf, os.Stderr), testutil.CreateLogger(), meta)
+
+		maxSteps := 600_000
+		step := 0
+		for ; step < maxSteps; step++ {
+			if us.GetState().GetExited() {
+				break
+			}
+			_, err := us.Step(false)
+			require.NoError(t, err)
+		}
+
+		require.Truef(t, state.GetExited(), "must complete program. reached %d of max %d steps", state.GetStep(), maxSteps)
+		require.Equal(t, uint8(0), state.GetExitCode(), "exit with 0")
+
+		expected := "keccak program. result=72a1d814ac3bc3f32c851b71e1189910e10506aaabf6416303f84d385a736493\n"
+		require.Equal(t, expected, stdOutBuf.String(), "calculate correct hash")
+		require.Equal(t, "", stdErrBuf.String(), "stderr silent")
+	})
+}
+
 func TestInstrumentedState_Claim(t *testing.T) {
 	runTestAcrossVms(t, "Claim", func(t *testing.T, vmFactory VMFactory[*State], goTarget testutil.GoTarget) {
 		state, meta := testutil.LoadELFProgram(t, testutil.ProgramPath("claim", goTarget), CreateInitialState)
@@ -420,6 +446,7 @@ func runTestsAcrossVms[T any](t *testing.T, testNamer TestNamer[T], testCases []
 	variations := []VMVariations{
 		{name: "Go 1.23 VM", goTarget: testutil.Go1_23, features: mipsevm.FeatureToggles{SupportMinimalSysEventFd2: true, SupportDclzDclo: true}},
 		{name: "Go 1.24 VM", goTarget: testutil.Go1_24, features: allFeaturesEnabled()},
+		{name: "Go 1.25 VM", goTarget: testutil.Go1_25, features: allFeaturesEnabled()},
 	}
 
 	for _, testCase := range testCases {
