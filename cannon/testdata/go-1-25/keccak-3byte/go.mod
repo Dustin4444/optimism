@@ -1,4 +1,4 @@
-module alloc
+module keccak
 
 go 1.25
 

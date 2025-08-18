@@ -1,15 +1,15 @@
 package main
 
 import (
-	"crypto/subtle"
 	"fmt"
+	"keccak-xorasm/xor"
 )
 
 func main() {
-	a := make([]byte, 4)
+	a := make([]byte, 3)
 	p := []byte{1, 2, 3}
 
-	subtle.XORBytes(a, a, p)
+	xor.XORBytes(a, a, p)
 
 	fmt.Printf("keccak program. result=%x\n", a)
 }

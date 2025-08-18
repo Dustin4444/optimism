@@ -383,9 +383,9 @@ func ExecuteMipsInstruction(insn uint32, opcode uint32, fun uint32, rs, rt, mem 
 			return SelectSubWord(rs, mem, 4, true)
 		case 0x24: // lbu
 			return SelectSubWord(rs, mem, 1, false)
-		case 0x25: //  lhu
+		case 0x25: // lhu
 			return SelectSubWord(rs, mem, 2, false)
-		case 0x26: //  lwr
+		case 0x26: // lwr
 			if arch.IsMips32 {
 				val := mem >> (24 - (rs&3)*8)
 				mask := Word(uint32(U32Mask) >> (24 - (rs&3)*8))
@@ -404,11 +404,11 @@ func ExecuteMipsInstruction(insn uint32, opcode uint32, fun uint32, rs, rt, mem 
 					return (rt & Word(rtMask)) | Word(lwrResult)
 				}
 			}
-		case 0x28: //  sb
+		case 0x28: // sb
 			return UpdateSubWord(rs, mem, 1, rt)
-		case 0x29: //  sh
+		case 0x29: // sh
 			return UpdateSubWord(rs, mem, 2, rt)
-		case 0x2a: //  swl
+		case 0x2a: // swl
 			if arch.IsMips32 {
 				val := rt >> ((rs & 3) * 8)
 				mask := uint32(U32Mask) >> ((rs & 3) * 8)
@@ -419,9 +419,9 @@ func ExecuteMipsInstruction(insn uint32, opcode uint32, fun uint32, rs, rt, mem 
 				mask := (uint64(U32Mask) >> sr) << (32 - ((rs & 0x4) << 3))
 				return (mem & Word(^mask)) | val
 			}
-		case 0x2b: //  sw
+		case 0x2b: // sw
 			return UpdateSubWord(rs, mem, 4, rt)
-		case 0x2e: //  swr
+		case 0x2e: // swr
 			if arch.IsMips32 {
 				val := rt << (24 - (rs&3)*8)
 				mask := uint32(U32Mask) << (24 - (rs&3)*8)

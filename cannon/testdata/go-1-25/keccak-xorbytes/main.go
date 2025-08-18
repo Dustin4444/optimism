@@ -6,7 +6,7 @@ import (
 )
 
 func main() {
-	a := make([]byte, 200)
+	a := make([]byte, 4)
 	p := []byte{1, 2, 3}
 
 	subtle.XORBytes(a, a, p)

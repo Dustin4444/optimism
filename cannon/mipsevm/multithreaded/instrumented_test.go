@@ -116,7 +116,33 @@ func TestInstrumentedState_XORBytes(t *testing.T) {
 		require.Truef(t, state.GetExited(), "must complete program. reached %d of max %d steps", state.GetStep(), maxSteps)
 		require.Equal(t, uint8(0), state.GetExitCode(), "exit with 0")
 
-		expected := "keccak program. result=0102030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\n"
+		expected := "keccak program. result=01020300\n"
+		require.Equal(t, expected, stdOutBuf.String(), "calculate correct hash")
+		require.Equal(t, "", stdErrBuf.String(), "stderr silent")
+	})
+}
+
+func TestInstrumentedState_XOR_ASM(t *testing.T) {
+	runTestAcrossVms(t, "XOR-ASM", func(t *testing.T, vmFactory VMFactory[*State], goTarget testutil.GoTarget) {
+		state, meta := testutil.LoadELFProgram(t, testutil.ProgramPath("keccak-xorasm", goTarget), CreateInitialState)
+
+		var stdOutBuf, stdErrBuf bytes.Buffer
+		us := vmFactory(state, nil, io.MultiWriter(&stdOutBuf, os.Stdout), io.MultiWriter(&stdErrBuf, os.Stderr), testutil.CreateLogger(), meta)
+
+		maxSteps := 600_000
+		step := 0
+		for ; step < maxSteps; step++ {
+			if us.GetState().GetExited() {
+				break
+			}
+			_, err := us.Step(false)
+			require.NoError(t, err)
+		}
+
+		require.Truef(t, state.GetExited(), "must complete program. reached %d of max %d steps", state.GetStep(), maxSteps)
+		require.Equal(t, uint8(0), state.GetExitCode(), "exit with 0")
+
+		expected := "keccak program. result=01020000\n"
 		require.Equal(t, expected, stdOutBuf.String(), "calculate correct hash")
 		require.Equal(t, "", stdErrBuf.String(), "stderr silent")
 	})
