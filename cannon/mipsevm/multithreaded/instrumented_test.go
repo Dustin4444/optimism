@@ -64,7 +64,59 @@ func TestInstrumentedState_Keccak(t *testing.T) {
 		require.Truef(t, state.GetExited(), "must complete program. reached %d of max %d steps", state.GetStep(), maxSteps)
 		require.Equal(t, uint8(0), state.GetExitCode(), "exit with 0")
 
-		expected := "keccak program. result=72a1d814ac3bc3f32c851b71e1189910e10506aaabf6416303f84d385a736493\n"
+		expected := "keccak program. result=22ae6da6b482f9b1b19b0b897c3fd43884180a1c5ee361e1107a1bc635649dda\n"
+		require.Equal(t, expected, stdOutBuf.String(), "calculate correct hash")
+		require.Equal(t, "", stdErrBuf.String(), "stderr silent")
+	})
+}
+
+func TestInstrumentedState_Keccak3Byte(t *testing.T) {
+	runTestAcrossVms(t, "Keccak3Byte", func(t *testing.T, vmFactory VMFactory[*State], goTarget testutil.GoTarget) {
+		state, meta := testutil.LoadELFProgram(t, testutil.ProgramPath("keccak-3byte", goTarget), CreateInitialState)
+
+		var stdOutBuf, stdErrBuf bytes.Buffer
+		us := vmFactory(state, nil, io.MultiWriter(&stdOutBuf, os.Stdout), io.MultiWriter(&stdErrBuf, os.Stderr), testutil.CreateLogger(), meta)
+
+		maxSteps := 600_000
+		step := 0
+		for ; step < maxSteps; step++ {
+			if us.GetState().GetExited() {
+				break
+			}
+			_, err := us.Step(false)
+			require.NoError(t, err)
+		}
+
+		require.Truef(t, state.GetExited(), "must complete program. reached %d of max %d steps", state.GetStep(), maxSteps)
+		require.Equal(t, uint8(0), state.GetExitCode(), "exit with 0")
+
+		expected := "keccak program. result=f1885eda54b7a053318cd41e2093220dab15d65381b1157a3633a83bfd5c9239\n"
+		require.Equal(t, expected, stdOutBuf.String(), "calculate correct hash")
+		require.Equal(t, "", stdErrBuf.String(), "stderr silent")
+	})
+}
+
+func TestInstrumentedState_XORBytes(t *testing.T) {
+	runTestAcrossVms(t, "XORBytes", func(t *testing.T, vmFactory VMFactory[*State], goTarget testutil.GoTarget) {
+		state, meta := testutil.LoadELFProgram(t, testutil.ProgramPath("keccak-xorbytes", goTarget), CreateInitialState)
+
+		var stdOutBuf, stdErrBuf bytes.Buffer
+		us := vmFactory(state, nil, io.MultiWriter(&stdOutBuf, os.Stdout), io.MultiWriter(&stdErrBuf, os.Stderr), testutil.CreateLogger(), meta)
+
+		maxSteps := 600_000
+		step := 0
+		for ; step < maxSteps; step++ {
+			if us.GetState().GetExited() {
+				break
+			}
+			_, err := us.Step(false)
+			require.NoError(t, err)
+		}
+
+		require.Truef(t, state.GetExited(), "must complete program. reached %d of max %d steps", state.GetStep(), maxSteps)
+		require.Equal(t, uint8(0), state.GetExitCode(), "exit with 0")
+
+		expected := "keccak program. result=0102030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\n"
 		require.Equal(t, expected, stdOutBuf.String(), "calculate correct hash")
 		require.Equal(t, "", stdErrBuf.String(), "stderr silent")
 	})
