@@ -13,36 +13,45 @@ import (
 )
 
 func TestRun(t *testing.T) {
-	var wg sync.WaitGroup
-	defer wg.Wait()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	commands := map[string][]string{
+		"default":    {"op-up", "--dir", t.TempDir()},
+		"configured": {"op-up", "--dir", t.TempDir(), "--config", "testdata/inventory.yaml,testdata/manifest.yaml"},
+	}
 
-	errCh := make(chan error)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		defer close(errCh)
-		if err := run(ctx, []string{"op-up", "--dir", t.TempDir()}, io.Discard, io.Discard); err != nil {
-			errCh <- err
-		}
-	}()
+	for name, command := range commands {
+		t.Run(name, func(t *testing.T) {
+			var wg sync.WaitGroup
+			defer wg.Wait()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
-	client, err := ethclient.DialContext(ctx, "http://localhost:8545")
-	require.NoError(t, err)
-	ticker := time.NewTicker(time.Millisecond * 250)
-	for {
-		select {
-		case e := <-errCh:
-			require.NoError(t, e)
-		case <-ticker.C:
-			chainID, err := client.ChainID(ctx)
-			if err != nil {
-				t.Logf("error while querying chain ID, will retry: %s", err)
-				continue
+			errCh := make(chan error)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				defer close(errCh)
+				if err := run(ctx, command, io.Discard, io.Discard); err != nil {
+					errCh <- err
+				}
+			}()
+
+			client, err := ethclient.DialContext(ctx, "http://localhost:8545")
+			require.NoError(t, err)
+			ticker := time.NewTicker(time.Millisecond * 250)
+			for {
+				select {
+				case e := <-errCh:
+					require.NoError(t, e)
+				case <-ticker.C:
+					chainID, err := client.ChainID(ctx)
+					if err != nil {
+						t.Logf("error while querying chain ID, will retry: %s", err)
+						continue
+					}
+					require.Equal(t, sysgo.DefaultL2AID.ToBig(), chainID)
+					return
+				}
 			}
-			require.Equal(t, sysgo.DefaultL2AID.ToBig(), chainID)
-			return
-		}
+		})
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -23,6 +24,8 @@ import (
 	"github.com/ethereum-optimism/optimism/op-devstack/stack"
 	"github.com/ethereum-optimism/optimism/op-devstack/stack/match"
 	"github.com/ethereum-optimism/optimism/op-devstack/sysgo"
+	"github.com/ethereum-optimism/optimism/op-devstack/sysgo/inventory"
+	"github.com/ethereum-optimism/optimism/op-devstack/sysgo/manifest"
 	opservice "github.com/ethereum-optimism/optimism/op-service"
 	"github.com/ethereum-optimism/optimism/op-service/cliapp"
 	"github.com/ethereum-optimism/optimism/op-service/client"
@@ -65,7 +68,120 @@ var (
 			return filepath.Join(parentDir, ".op-up")
 		}(),
 	}
+	configsFlag = &cli.StringSliceFlag{
+		Name:      "config",
+		Usage:     "paths to the inventory.yaml and manifest.yaml files.",
+		EnvVars:   opservice.PrefixEnvVar(envPrefix, "CONFIG"),
+		TakesFile: true,
+		Action: func(_ *cli.Context, configPaths []string) error {
+			switch len(configPaths) {
+			case 0, 2:
+				return nil
+			default:
+				return fmt.Errorf("expected 0 or 2 config paths, got %d", len(configPaths))
+			}
+		},
+	}
 )
+
+type Config struct {
+	DataDir   string
+	Inventory inventory.Inventory
+	Manifest  manifest.Manifest
+}
+
+func newConfigFromCLI(cliCtx *cli.Context) (*Config, error) {
+	configPaths := cliCtx.StringSlice(configsFlag.Name)
+	var inv *inventory.Inventory
+	var manif *manifest.Manifest
+	switch len(configPaths) {
+	case 0:
+		inv = &inventory.Inventory{
+			Chains: []inventory.Chain{
+				{
+					Nodes: []inventory.Node{
+						{
+							Kind: "node",
+							Name: "sequencer-0",
+							Spec: inventory.NodeSpec{
+								Kind: "sequencer",
+								EL: inventory.Service{
+									Kind: "op-geth",
+								},
+								CL: inventory.Service{
+									Kind: "op-node",
+								},
+							},
+						},
+					},
+					Services: []inventory.Service{
+						{
+							Kind: "proposer",
+							Name: "op-proposer",
+							Deps: inventory.Dependencies{
+								Nodes: []string{"sequencer-0"},
+							},
+						},
+						{
+							Kind: "batcher",
+							Name: "op-batcher",
+							Spec: inventory.ServiceSpec{
+								Kind: "op-batcher",
+							},
+							Deps: inventory.Dependencies{
+								Nodes: []string{"sequencer-0"},
+							},
+						},
+						{
+							Kind: "faucet",
+							Name: "op-faucet",
+							Spec: inventory.ServiceSpec{
+								Kind: "op-faucet",
+							},
+							Deps: inventory.Dependencies{
+								Nodes: []string{"sequencer-0"},
+							},
+						},
+					},
+				},
+			},
+			Services: []inventory.Service{},
+		}
+		manif = &manifest.Manifest{
+			Name: "",
+			Type: "",
+			L1: manifest.L1Config{
+				ChainID: 101010,
+				Name:    "testl1",
+			},
+			L2: manifest.L2Config{
+				Chains: []manifest.Chain{
+					{
+						Name: "testl2",
+						Id:   sysgo.DefaultL2AID.String(),
+					},
+				},
+			},
+		}
+	case 2:
+		var err error
+		inv, err = inventory.NewInventoryFromPath(configPaths[0])
+		if err != nil {
+			return nil, fmt.Errorf("new inventory from path: %v", err)
+		}
+		manif, err = manifest.NewManifestFromPath(configPaths[1])
+		if err != nil {
+			return nil, fmt.Errorf("new manifest from path: %v", err)
+		}
+	default:
+		return nil, fmt.Errorf("this should not happen: expected 0 or 2 config paths, got %d", len(configPaths))
+	}
+	return &Config{
+		DataDir:   cliCtx.String(dirFlag.Name),
+		Inventory: *inv,
+		Manifest:  *manif,
+	}, nil
+}
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
@@ -83,7 +199,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	app.Version = opservice.FormatVersion(Version, GitCommit, GitDate, VersionMeta)
 	app.Name = "op-up"
 	app.Usage = "deploys an in-memory OP Stack devnet."
-	app.Flags = cliapp.ProtectFlags([]cli.Flag{dirFlag})
+	app.Flags = cliapp.ProtectFlags([]cli.Flag{dirFlag, configsFlag})
 	// The default OnUsageError behavior will print the error twice: once in the cli package and
 	// once in our main function.
 	// The function below prints help and returns the error for further handling/error messages.
@@ -94,18 +210,22 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	app.Action = func(cliCtx *cli.Context) error {
-		return runOpUp(cliCtx.Context, cliCtx.App.ErrWriter, cliCtx.String(dirFlag.Name))
+		config, err := newConfigFromCLI(cliCtx)
+		if err != nil {
+			return err
+		}
+		return runOpUp(cliCtx.Context, cliCtx.App.ErrWriter, config)
 	}
 	return app.RunContext(ctx, args)
 }
 
-func runOpUp(ctx context.Context, stderr io.Writer, opUpDir string) error {
+func runOpUp(ctx context.Context, stderr io.Writer, config *Config) error {
 	fmt.Fprintf(stderr, "%s\n", asciiArt)
 
-	if err := os.MkdirAll(opUpDir, 0o755); err != nil {
+	if err := os.MkdirAll(config.DataDir, 0o755); err != nil {
 		return fmt.Errorf("create the op-up dir: %w", err)
 	}
-	deployerCacheDir := filepath.Join(opUpDir, "deployer", "cache")
+	deployerCacheDir := filepath.Join(config.DataDir, "deployer", "cache")
 	if err := os.MkdirAll(deployerCacheDir, 0o755); err != nil {
 		return fmt.Errorf("create the deployer cache dir: %w", err)
 	}
@@ -115,27 +235,19 @@ func runOpUp(ctx context.Context, stderr io.Writer, opUpDir string) error {
 	p := newP(ctx, stderr)
 	defer p.Close()
 
-	ids := sysgo.NewDefaultMinimalSystemIDs(sysgo.DefaultL1ID, sysgo.DefaultL2AID)
+	l1ChainID := eth.ChainIDFromUInt64(config.Manifest.L1.ChainID)
+	l1ELID := stack.NewL1ELNodeID("l1", l1ChainID)
+	l1CLID := stack.NewL1CLNodeID("l1", l1ChainID)
 	opts := stack.Combine(
 		sysgo.WithMnemonicKeys(devkeys.TestMnemonic),
-
 		sysgo.WithDeployer(),
 		sysgo.WithDeployerOptions(
 			sysgo.WithEmbeddedContractSources(),
-			sysgo.WithCommons(ids.L1.ChainID()),
-			sysgo.WithPrefundedL2(ids.L1.ChainID(), ids.L2.ChainID()),
+			sysgo.WithCommons(l1ChainID),
 		),
 		sysgo.WithDeployerPipelineOption(sysgo.WithDeployerCacheDir(deployerCacheDir)),
-
-		sysgo.WithL1Nodes(ids.L1EL, ids.L1CL),
-
-		sysgo.WithL2ELNode(ids.L2EL),
-		sysgo.WithL2CLNode(ids.L2CL, ids.L1CL, ids.L1EL, ids.L2EL, sysgo.L2CLSequencer()),
-
-		sysgo.WithBatcher(ids.L2Batcher, ids.L1EL, ids.L2CL, ids.L2EL),
-		sysgo.WithProposer(ids.L2Proposer, ids.L1EL, &ids.L2CL, nil),
-
-		sysgo.WithFaucets([]stack.L1ELNodeID{ids.L1EL}, []stack.L2ELNodeID{ids.L2EL}),
+		sysgo.WithL1Nodes(l1ELID, l1CLID),
+		sysgo.WithInventoryAndManifest(&config.Inventory, &config.Manifest, l1ELID, l1CLID),
 	)
 
 	orch := sysgo.NewOrchestrator(p, opts)
@@ -197,14 +309,19 @@ func runSysgo(ctx context.Context, stderr io.Writer, orch *sysgo.Orchestrator) e
 	sys := shim.NewSystem(t)
 	orch.Hydrate(sys)
 	l2Networks := sys.L2Networks()
-	if len(l2Networks) != 1 {
-		return fmt.Errorf("need one l2 network, got: %d", len(l2Networks))
+	if len(l2Networks) == 0 {
+		return errors.New("no l2 networks found")
 	}
 	l2Net := l2Networks[0]
 	elNode := l2Net.L2ELNode(match.FirstL2EL)
 
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
 	// Log on new blocks.
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		const blockPollInterval = 500 * time.Millisecond
 		var lastBlock uint64
 		for {
@@ -225,22 +342,23 @@ func runSysgo(ctx context.Context, stderr io.Writer, orch *sysgo.Orchestrator) e
 	}()
 
 	// Proxy L2 EL requests.
+	wg.Add(1)
 	go func() {
-		if err := proxyEL(stderr, elNode.L2EthClient().RPC()); err != nil {
+		defer wg.Done()
+		if err := proxyEL(ctx, stderr, elNode.L2EthClient().RPC()); err != nil {
 			fmt.Fprintf(stderr, "error: %v", err)
 		}
 	}()
-
-	<-ctx.Done()
 
 	return nil
 }
 
 // proxyEL is a hacky way to intercept EL json rpc requests for logging to get around log filtering
 // bugs.
-func proxyEL(stderr io.Writer, client client.RPC) error {
+func proxyEL(ctx context.Context, stderr io.Writer, client client.RPC) error {
 	// Set up the HTTP handler for all incoming requests.
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// Ensure the request method is POST, as JSON RPC typically uses POST.
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -294,16 +412,11 @@ func proxyEL(stderr io.Writer, client client.RPC) error {
 		// without needing to know its specific Go type beforehand.
 		var rpcResult json.RawMessage
 
-		// Create a context with a timeout for the RPC call to the backend.
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second) // 30-second timeout
-		defer cancel()                                                           // Ensure the context is cancelled to release resources
-
 		fmt.Fprintf(stderr, "%s\n", method)
 
 		// Use the rpc.Client to make the actual call to the backend Ethereum node.
 		// The `callParams...` syntax unpacks the slice into variadic arguments.
-		err = client.CallContext(ctx, &rpcResult, method, callParams...)
-		if err != nil {
+		if err = client.CallContext(ctx, &rpcResult, method, callParams...); err != nil {
 			message := fmt.Sprintf("RPC call to backend failed for method '%s': %v", method, err)
 			// If the RPC call to the backend fails, construct a JSON RPC error response.
 			rpcErr := map[string]any{
@@ -347,11 +460,29 @@ func proxyEL(stderr io.Writer, client client.RPC) error {
 		}
 	})
 
-	// Start the HTTP server.
-	if err := http.ListenAndServe("localhost:8545", nil); err != nil {
-		return fmt.Errorf("listen and server: %w", err)
+	srv := &http.Server{
+		Addr:    "localhost:8545",
+		Handler: mux,
 	}
-	return nil
+
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	errCh := make(chan error)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer close(errCh)
+		// Start the HTTP server.
+		if err := srv.ListenAndServe(); err != nil {
+			errCh <- fmt.Errorf("listen and serve: %w", err)
+		}
+	}()
+	<-ctx.Done()
+	if err := srv.Shutdown(context.Background()); err != nil {
+		return fmt.Errorf("shut down server: %w", err)
+	}
+	return <-errCh
 }
 
 type testingT struct {

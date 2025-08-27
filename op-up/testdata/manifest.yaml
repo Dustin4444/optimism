@@ -1,0 +1,9 @@
+l1:
+  name: alpaca
+  chain_id: 31337
+l2:
+  chains:
+    - name: alpaca-1
+      chain_id: 901
+    - name: alpaca-2
+      chain_id: 902

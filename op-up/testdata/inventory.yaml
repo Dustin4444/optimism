@@ -1,0 +1,66 @@
+chains:
+  - nodes:
+      - kind: "node"
+        name: "sequencer-0"
+        spec:
+          kind: "sequencer"
+          el:
+            kind: "op-geth"
+            spec:
+              kind: "full"
+          cl:
+            kind: "op-node"
+
+    services:
+      - kind: "proposer"
+        name: "op-proposer"
+        spec:
+          kind: "op-proposer"
+        deps:
+          nodes:
+            - "sequencer-0"
+
+      - kind: "batcher"
+        name: "op-batcher"
+        spec:
+          kind: "op-batcher"
+        deps:
+          nodes:
+            - "sequencer-0"
+
+      - kind: "faucet"
+        name: "op-faucet"
+        spec:
+          kind: "op-faucet"
+        deps:
+          nodes:
+            - "sequencer-0"
+
+  - nodes:
+      - kind: "node"
+        name: "sequencer-0"
+        spec:
+          kind: "sequencer"
+          el:
+            kind: "op-geth"
+            spec:
+              kind: "full"
+          cl:
+            kind: "op-node"
+
+    services:
+      - kind: "proposer"
+        name: "op-proposer"
+        spec:
+          kind: "op-proposer"
+        deps:
+          nodes:
+            - "sequencer-0"
+
+      - kind: "batcher"
+        name: "op-batcher"
+        spec:
+          kind: "op-batcher"
+        deps:
+          nodes:
+            - "sequencer-0"
