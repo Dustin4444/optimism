@@ -6,6 +6,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/dsl"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-supervisor/supervisor/types"
 )
 
@@ -14,7 +15,7 @@ func TestSyncTesterExtEL(gt *testing.T) {
 	// This test uses NewMinimalExternalEL which includes:
 	// - Minimal setup with external L1EL, L1CL, L2EL, L2CL (sequencer)
 	// - SyncTester that connects to the L2CL instead of L2EL
-	sys := presets.NewMinimalExternalEL(t)
+	sys := presets.NewMinimalExternalELWithExternalL1(t, "https://proxyd-l1-sepolia.primary.client.dev.oplabs.cloud", "https://beacon-api-proxy-sepolia.primary.client.dev.oplabs.cloud", eth.ChainIDFromUInt64(11155111))
 	require := t.Require()
 
 	// Test that we can get chain IDs from L2CL node
@@ -27,7 +28,7 @@ func TestSyncTesterExtEL(gt *testing.T) {
 	require.NotNil(sys.SyncTester, "SyncTester should be available")
 
 	dsl.CheckAll(t,
-		sys.L2CL.AdvancedFn(types.LocalUnsafe, 22285448, 30),
+		sys.L2CL.AdvancedFn(types.LocalUnsafe, 22285448, 300),
 	)
 
 	// Test that we can get chain ID from SyncTester
