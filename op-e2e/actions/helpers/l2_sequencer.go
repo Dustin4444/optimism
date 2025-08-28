@@ -53,6 +53,9 @@ type L2Sequencer struct {
 	failL2GossipUnsafeBlock error // mock error
 
 	mockL1OriginSelector *MockL1OriginSelector
+
+	sealBlockSignal     chan struct{}
+	sealBlockDoneSignal chan struct{}
 }
 
 func NewL2Sequencer(t Testing, log log.Logger, l1 derive.L1Fetcher, blobSrc derive.L1BlobsFetcher,
@@ -90,41 +93,60 @@ func NewL2Sequencer(t Testing, log log.Logger, l1 derive.L1Fetcher, blobSrc deri
 		attrBuilder:             attrBuilder,
 		mockL1OriginSelector:    l1OriginSelector,
 		failL2GossipUnsafeBlock: nil,
+		sealBlockSignal:         make(chan struct{}),
+		sealBlockDoneSignal:     make(chan struct{}),
 	}
 }
 
 // ActL2StartBlock starts building of a new L2 block on top of the head
 func (s *L2Sequencer) ActL2StartBlock(t Testing) {
-	require.NoError(t, s.drainer.Drain()) // can't build when other work is still blocking
-	if !s.L2PipelineIdle {
-		t.InvalidAction("cannot start L2 build when derivation is not idle")
-		return
-	}
-	if s.l2Building {
-		t.InvalidAction("already started building L2 block")
-		return
-	}
-	s.synchronousEvents.Emit(t.Ctx(), sequencing.SequencerActionEvent{})
-	require.NoError(t, s.drainer.DrainUntil(event.Is[engine.BuildStartEvent], false),
-		"failed to start block building")
-
-	s.l2Building = true
+	ready := make(chan struct{})
+	go func() {
+		s.ActL2BuildBlock(t, func() {
+			ready <- struct{}{}
+			<-s.sealBlockSignal
+		})
+		s.sealBlockDoneSignal <- struct{}{}
+	}()
+	<-ready
 }
 
 // ActL2EndBlock completes a new L2 block and applies it to the L2 chain as new canonical unsafe head
 func (s *L2Sequencer) ActL2EndBlock(t Testing) {
-	if !s.l2Building {
+	if !s.l2Building.Load() {
 		t.InvalidAction("cannot end L2 block building when no block is being built")
 		return
 	}
-	s.l2Building = false
 
-	s.synchronousEvents.Emit(t.Ctx(), sequencing.SequencerActionEvent{})
+	s.sealBlockSignal <- struct{}{}
+	<-s.sealBlockDoneSignal
+	s.l2Building.Store(false)
+}
+
+// ActL2BuildBlock builds a block and allows a test hook to run between start and seal.
+// The hook can be used to include transactions deterministically during block building.
+func (s *L2Sequencer) ActL2BuildBlock(t Testing, hook func()) {
+	require.NoError(t, s.drainer.Drain())
+	if !s.L2PipelineIdle.Load() {
+		t.InvalidAction("cannot start L2 build when derivation is not idle")
+		return
+	}
+	if s.l2Building.Load() {
+		t.InvalidAction("already started building L2 block")
+		return
+	}
+	s.l2Building.Store(true)
+
+	ctx := t.Ctx()
+	if hook != nil {
+		ctx = context.WithValue(ctx, engine.BuildHookCtxKey, func(c context.Context) { hook() })
+	}
+
+	s.synchronousEvents.Emit(ctx, sequencing.SequencerActionEvent{})
 	require.NoError(t, s.drainer.DrainUntil(event.Is[engine.PayloadSuccessEvent], false),
 		"failed to complete block building")
 
-	// After having built a L2 block, make sure to get an engine update processed,
-	// and request a forkchoice update directly.
+	// Post-build forkchoice update
 	s.engine.TryUpdateEngine(t.Ctx())
 	s.engine.RequestForkchoiceUpdate(t.Ctx())
 	require.NoError(t, s.drainer.DrainUntil(func(ev event.Event) bool {
@@ -255,37 +277,4 @@ func (s *L2Sequencer) ActBuildL2ToInterop(t Testing) {
 	for s.L2Unsafe().Time < *s.RollupCfg.InteropTime {
 		s.ActL2EmptyBlock(t)
 	}
-}
-
-// ActL2BuildBlock builds a block and allows a test hook to run between start and seal.
-// The hook can be used to include transactions deterministically during block building.
-func (s *L2Sequencer) ActL2BuildBlock(t Testing, hook func()) {
-	require.NoError(t, s.drainer.Drain())
-	if !s.L2PipelineIdle {
-		t.InvalidAction("cannot start L2 build when derivation is not idle")
-		return
-	}
-	if s.l2Building {
-		t.InvalidAction("already started building L2 block")
-		return
-	}
-
-	ctx := t.Ctx()
-	if hook != nil {
-		ctx = context.WithValue(ctx, engine.BuildHookCtxKey, func(c context.Context) { hook() })
-	}
-
-	s.synchronousEvents.Emit(ctx, sequencing.SequencerActionEvent{})
-	require.NoError(t, s.drainer.DrainUntil(event.Is[engine.PayloadSuccessEvent], false),
-		"failed to complete block building")
-
-	// Post-build forkchoice update
-	s.engine.TryUpdateEngine(t.Ctx())
-	s.engine.RequestForkchoiceUpdate(t.Ctx())
-	require.NoError(t, s.drainer.DrainUntil(func(ev event.Event) bool {
-		x, ok := ev.(engine.ForkchoiceUpdateEvent)
-		return ok && x.UnsafeL2Head == s.engine.UnsafeL2Head()
-	}, false))
-	require.Equal(t, s.engine.UnsafeL2Head(), s.syncStatus.SyncStatus().UnsafeL2,
-		"sync status must be accurate after block building")
 }

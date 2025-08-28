@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum-optimism/optimism/op-supervisor/supervisor/backend/depset"
@@ -74,8 +75,8 @@ type L2Verifier struct {
 
 	l1 derive.L1Fetcher
 
-	L2PipelineIdle bool
-	l2Building     bool
+	L2PipelineIdle *atomic.Bool
+	l2Building     *atomic.Bool
 
 	RollupCfg *rollup.Config
 
@@ -223,8 +224,8 @@ func NewL2Verifier(t Testing, log log.Logger, l1 derive.L1Fetcher,
 		drainer:           executor,
 		l1:                l1,
 		syncStatus:        syncStatusTracker,
-		L2PipelineIdle:    true,
-		l2Building:        false,
+		L2PipelineIdle:    func() *atomic.Bool { x := new(atomic.Bool); x.Store(true); return x }(),
+		l2Building:        func() *atomic.Bool { x := new(atomic.Bool); x.Store(false); return x }(),
 		RollupCfg:         cfg,
 		rpc:               rpc.NewServer(),
 		synchronousEvents: testActionEmitter,
@@ -413,9 +414,9 @@ func (s *L2Verifier) OnEvent(ctx context.Context, ev event.Event) bool {
 	case rollup.CriticalErrorEvent:
 		panic(fmt.Errorf("derivation failed critically: %w", x.Err))
 	case derive.DeriverIdleEvent:
-		s.L2PipelineIdle = true
+		s.L2PipelineIdle.Store(true)
 	case derive.PipelineStepEvent:
-		s.L2PipelineIdle = false
+		s.L2PipelineIdle.Store(false)
 	default:
 		return false
 	}
@@ -431,7 +432,7 @@ func (s *L2Verifier) ActL2EventsUntilPending(t Testing, num uint64) {
 
 func (s *L2Verifier) ActL2EventsUntil(t Testing, fn func(ev event.Event) bool, max int, excl bool) {
 	t.Helper()
-	if s.l2Building {
+	if s.l2Building.Load() {
 		t.InvalidAction("cannot derive new data while building L2 block")
 		return
 	}

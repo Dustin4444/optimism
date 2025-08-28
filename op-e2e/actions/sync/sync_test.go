@@ -1038,8 +1038,8 @@ func TestSpanBatchAtomicity_Consolidation(gt *testing.T) {
 
 	// Start verifier safe sync
 	verifier.ActL1HeadSignal(t)
-	verifier.L2PipelineIdle = false
-	for !verifier.L2PipelineIdle {
+	verifier.L2PipelineIdle.Store(false)
+	for !verifier.L2PipelineIdle.Load() {
 		// wait for next pending block
 		verifier.ActL2EventsUntil(t, func(ev event.Event) bool {
 			if event.Is[engine2.SafeDerivedEvent](ev) { // safe updates should only happen once the pending-safe reaches the target.
@@ -1093,8 +1093,8 @@ func TestSpanBatchAtomicity_ForceAdvance(gt *testing.T) {
 
 	// Start verifier safe sync
 	verifier.ActL1HeadSignal(t)
-	verifier.L2PipelineIdle = false
-	for !verifier.L2PipelineIdle {
+	verifier.L2PipelineIdle.Store(false)
+	for !verifier.L2PipelineIdle.Load() {
 		// wait for next pending block
 		verifier.ActL2EventsUntil(t, func(ev event.Event) bool {
 			if event.Is[engine2.SafeDerivedEvent](ev) { // safe updates should only happen once the pending-safe reaches the target.
