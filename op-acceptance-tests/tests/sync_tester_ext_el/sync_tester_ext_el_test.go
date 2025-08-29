@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
-	"github.com/ethereum-optimism/optimism/op-devstack/dsl"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-supervisor/supervisor/types"
@@ -38,9 +37,7 @@ func TestSyncTesterExtEL(gt *testing.T) {
 	l2CLSyncStatus := sys.L2CL.SyncStatus()
 	require.NotNil(l2CLSyncStatus, "L2CL should have sync status")
 
-	dsl.CheckAll(t,
-		sys.L2CL.AdvancedFn(types.LocalUnsafe, 31987002, 300),
-	)
+	sys.L2CL.Advanced(types.LocalUnsafe, 32332768, 1000)
 
 	t.Logger().Info("SyncTester ExtEL test completed successfully",
 		"l2cl_chain_id", l2CLChainID,

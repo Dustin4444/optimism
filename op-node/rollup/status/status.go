@@ -116,7 +116,7 @@ func (st *StatusTracker) OnL1Unsafe(x eth.L1BlockRef) {
 		// New L1 block is not the same as the current head or a single step linear extension.
 		// This could either be a long L1 extension, or a reorg, or we simply missed a head update.
 		st.log.Warn("L1 head signal indicates a possible L1 re-org",
-			"old_l1_head", st.data.HeadL1, "new_l1_head_parent", x.ParentHash, "new_l1_head", x)
+			"current_l1_head", st.data.HeadL1, "new_l1_head", x, "new_l1_head_parent", x.ParentHash)
 	}
 	st.data.HeadL1 = x
 	st.UpdateSyncStatus()

@@ -490,7 +490,7 @@ func DefaultMinimalExternalELSystemWithEndpointAndSuperchainRegistry(dest *Defau
 
 	// Add SyncTesterL2ELNode as the L2EL replacement for real-world EL endpoint
 	opt.Add(WithSyncTesterL2ELNode(ids.L2EL, ids.L2CL, fcus))
-	opt.Add(WithL2CLNode(ids.L2CL, ids.L1CL, ids.L1EL, ids.L2EL, L2CLSequencer()))
+	opt.Add(WithL2CLNode(ids.L2CL, ids.L1CL, ids.L1EL, ids.L2EL))
 
 	opt.Add(stack.Finally(func(orch *Orchestrator) {
 		*dest = ids
