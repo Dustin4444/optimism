@@ -99,21 +99,29 @@ func NewDerivationPipeline(log log.Logger, rollupCfg *rollup.Config, depSet Depe
 	altDA AltDAInputFetcher, l2Source L2Source, metrics Metrics, managedBySupervisor bool,
 ) *DerivationPipeline {
 	spec := rollup.NewChainSpec(rollupCfg)
+
+	// Wrap the L1Fetcher with CachedL1Fetcher for local caching
+	chainID := rollupCfg.L1ChainID.Uint64()
+	cachedL1Fetcher := NewCachedL1Fetcher(l1Fetcher, log, chainID)
+
+	// Wrap the L2Source with CachedL2Source for local caching
+	cachedL2Source := NewCachedL2Source(l2Source, log, chainID)
+
 	// Stages are strung together into a pipeline,
 	// results are pulled from the stage closed to the L2 engine, which pulls from the previous stage, and so on.
 	var l1Traversal l1TraversalStage
 	if managedBySupervisor {
-		l1Traversal = NewL1TraversalManaged(log, rollupCfg, l1Fetcher)
+		l1Traversal = NewL1TraversalManaged(log, rollupCfg, cachedL1Fetcher)
 	} else {
-		l1Traversal = NewL1Traversal(log, rollupCfg, l1Fetcher)
+		l1Traversal = NewL1Traversal(log, rollupCfg, cachedL1Fetcher)
 	}
-	dataSrc := NewDataSourceFactory(log, rollupCfg, l1Fetcher, l1Blobs, altDA) // auxiliary stage for L1Retrieval
+	dataSrc := NewDataSourceFactory(log, rollupCfg, cachedL1Fetcher, l1Blobs, altDA) // auxiliary stage for L1Retrieval
 	l1Src := NewL1Retrieval(log, dataSrc, l1Traversal)
 	frameQueue := NewFrameQueue(log, rollupCfg, l1Src)
 	channelMux := NewChannelMux(log, spec, frameQueue, metrics)
 	chInReader := NewChannelInReader(rollupCfg, log, channelMux, metrics)
-	batchMux := NewBatchMux(log, rollupCfg, chInReader, l2Source)
-	attrBuilder := NewFetchingAttributesBuilder(rollupCfg, depSet, l1Fetcher, l2Source)
+	batchMux := NewBatchMux(log, rollupCfg, chInReader, cachedL2Source)
+	attrBuilder := NewFetchingAttributesBuilder(rollupCfg, depSet, cachedL1Fetcher, cachedL2Source)
 	attributesQueue := NewAttributesQueue(log, rollupCfg, attrBuilder, batchMux)
 
 	// Reset from ResetEngine then up from L1 Traversal. The stages do not talk to each other during
@@ -124,14 +132,14 @@ func NewDerivationPipeline(log log.Logger, rollupCfg *rollup.Config, depSet Depe
 	return &DerivationPipeline{
 		log:       log,
 		rollupCfg: rollupCfg,
-		l1Fetcher: l1Fetcher,
+		l1Fetcher: cachedL1Fetcher,
 		altDA:     altDA,
 		resetting: 0,
 		stages:    stages,
 		metrics:   metrics,
 		traversal: l1Traversal,
 		attrib:    attributesQueue,
-		l2:        l2Source,
+		l2:        cachedL2Source,
 	}
 }
 
