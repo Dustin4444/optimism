@@ -16,6 +16,7 @@ import (
 var (
 	addressEmptyPadding [12]byte = [12]byte{}
 	uint64EmptyPadding  [24]byte = [24]byte{}
+	uint32EmptyPadding  [28]byte = [28]byte{}
 	uint8EmptyPadding   [31]byte = [31]byte{}
 )
 
@@ -67,6 +68,21 @@ func ReadUint64(r io.Reader) (uint64, error) {
 	if _, err := io.ReadFull(r, readPadding[:]); err != nil {
 		return n, err
 	} else if !bytes.Equal(readPadding[:], uint64EmptyPadding[:]) {
+		return n, fmt.Errorf("number padding was not empty: %x", readPadding[:])
+	}
+	if err := binary.Read(r, binary.BigEndian, &n); err != nil {
+		return 0, errors.New("expected number length to be 8 bytes")
+	}
+	return n, nil
+}
+
+// ReadUint32 reads a big endian uint32 from a 32 byte word
+func ReadUint32(r io.Reader) (uint32, error) {
+	var readPadding [28]byte
+	var n uint32
+	if _, err := io.ReadFull(r, readPadding[:]); err != nil {
+		return n, err
+	} else if !bytes.Equal(readPadding[:], uint32EmptyPadding[:]) {
 		return n, fmt.Errorf("number padding was not empty: %x", readPadding[:])
 	}
 	if err := binary.Read(r, binary.BigEndian, &n); err != nil {

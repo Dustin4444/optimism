@@ -61,9 +61,12 @@ contract L1Block is ISemver {
     /// @notice The scalar value applied to the operator fee.
     uint32 public operatorFeeScalar;
 
-    /// @custom:semver 1.6.1
+    /// @notice The DA footprint gas scalar.
+    uint32 public daFootprintGasScalar;
+
+    /// @custom:semver 1.7.0
     function version() public pure virtual returns (string memory) {
-        return "1.6.1";
+        return "1.7.0";
     }
 
     /// @notice Returns the gas paying token, its decimals, name and symbol.
@@ -210,6 +213,68 @@ contract L1Block is ISemver {
         assembly {
             // operatorFeeScalar (uint32), operatorFeeConstant (uint64)
             sstore(operatorFeeConstant.slot, shr(160, calldataload(164)))
+        }
+    }
+
+    /// @notice Updates the L1 block values for a Jovian upgraded chain.
+    /// Params are packed and passed in as raw msg.data instead of ABI to reduce calldata size.
+    /// Params are expected to be in the following order:
+    ///   1. _baseFeeScalar         L1 base fee scalar
+    ///   2. _blobBaseFeeScalar     L1 blob base fee scalar
+    ///   3. _sequenceNumber        Number of L2 blocks since epoch start.
+    ///   4. _timestamp             L1 timestamp.
+    ///   5. _number                L1 blocknumber.
+    ///   6. _basefee               L1 base fee.
+    ///   7. _blobBaseFee           L1 blob base fee.
+    ///   8. _hash                  L1 blockhash.
+    ///   9. _batcherHash           Versioned hash to authenticate batcher by.
+    ///   10. _operatorFeeScalar    Operator fee scalar.
+    ///   11. _operatorFeeConstant  Operator fee constant.
+    ///   12. _daFootprintGasScalar DA footprint gas scalar.
+    function setL1BlockValuesJovian() public {
+        _setL1BlockValuesJovian();
+    }
+
+    /// @notice Updates the L1 block values for a Jovian upgraded chain.
+    /// Params are packed and passed in as raw msg.data instead of ABI to reduce calldata size.
+    /// Params are expected to be in the following order:
+    ///   1. _baseFeeScalar         L1 base fee scalar
+    ///   2. _blobBaseFeeScalar     L1 blob base fee scalar
+    ///   3. _sequenceNumber        Number of L2 blocks since epoch start.
+    ///   4. _timestamp             L1 timestamp.
+    ///   5. _number                L1 blocknumber.
+    ///   6. _basefee               L1 base fee.
+    ///   7. _blobBaseFee           L1 blob base fee.
+    ///   8. _hash                  L1 blockhash.
+    ///   9. _batcherHash           Versioned hash to authenticate batcher by.
+    ///   10. _operatorFeeScalar    Operator fee scalar.
+    ///   11. _operatorFeeConstant  Operator fee constant.
+    ///   12. _daFootprintGasScalar DA footprint gas scalar.
+    function _setL1BlockValuesJovian() internal {
+        _setL1BlockValuesIsthmus();
+        assembly {
+            let slotValue := sload(daFootprintGasScalar.slot)
+
+            // The slot contains:
+            //
+            // (opfs = operatorFeeScalar, dfgs = daFootprintGasScalar)
+            // +--------------------------------+----------------+----------------+--------------------------------+
+            // | operatorFeeConstant (64 bits)  | opfs (32 bits) | dfgs (32 bits) | empty bits (64 bits)           |
+            // +--------------------------------+----------------+----------------+--------------------------------+
+            //                                                   ^
+            //                                         daFootprintGasScalar.offset (64 + 32 bits = 128 bits = 12 bytes)
+            //
+            let bitOffset := mul(daFootprintGasScalar.offset, 8)
+
+            let mask := not(shl(bitOffset, 0xFFFFFFFF))
+
+            let clearedSlot := and(slotValue, mask)
+
+            let newValue := shr(224, calldataload(176))
+
+            let shiftedNewValue := shl(bitOffset, newValue)
+
+            sstore(daFootprintGasScalar.slot, or(clearedSlot, shiftedNewValue))
         }
     }
 }

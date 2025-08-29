@@ -40,8 +40,8 @@
     "sourceCodeHash": "0xad12c20a00dc20683bd3f68e6ee254f968da6cc2d98930be6534107ee5cb11d9"
   },
   "src/L1/SystemConfig.sol:SystemConfig": {
-    "initCodeHash": "0x07b7039de5b8a4dc57642ee9696e949d70516b7f6dce41dde4920efb17105ef2",
-    "sourceCodeHash": "0x997212ceadabb306c2abd31918b09bccbba0b21662c1d8930a3599831c374b13"
+    "initCodeHash": "0x6dc8299afb537d7f8f01ec445e75778a6d46645774b897415ce9b3e923aefa02",
+    "sourceCodeHash": "0xee80ff9a62753ea170126d8a4d03df0859036088952cee0a5e83663d9358052c"
   },
   "src/L2/BaseFeeVault.sol:BaseFeeVault": {
     "initCodeHash": "0x9b664e3d84ad510091337b4aacaa494b142512e2f6f7fbcdb6210ed62ca9b885",
@@ -60,8 +60,8 @@
     "sourceCodeHash": "0x4351fe2ac1106c8c220b8cfe7839bc107c24d8084deb21259ac954f5a362725d"
   },
   "src/L2/L1Block.sol:L1Block": {
-    "initCodeHash": "0xc35734387887a95f611888f3944546c6bcf82fd4c05dcdaa1e019779b628ad68",
-    "sourceCodeHash": "0x6e5349fd781d5f0127ff29ccea4d86a80240550cfa322364183a0f629abcb43e"
+    "initCodeHash": "0x8ba9a14ca4d543c6a099067cf96d8eeda9f9179c80c0a3f7f392dcf5571478b2",
+    "sourceCodeHash": "0xb1c5b973bd88ec5e18cacfdeb94fd1344306f7630633a1125a1006b0e52704bf"
   },
   "src/L2/L1FeeVault.sol:L1FeeVault": {
     "initCodeHash": "0x9b664e3d84ad510091337b4aacaa494b142512e2f6f7fbcdb6210ed62ca9b885",

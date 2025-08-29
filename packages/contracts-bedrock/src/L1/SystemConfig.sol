@@ -23,18 +23,20 @@ import { IETHLockbox } from "interfaces/L1/IETHLockbox.sol";
 ///         the L2 chain.
 contract SystemConfig is ProxyAdminOwnedBase, OwnableUpgradeable, ReinitializableBase, ISemver {
     /// @notice Enum representing different types of updates.
-    /// @custom:value BATCHER              Represents an update to the batcher hash.
-    /// @custom:value FEE_SCALARS          Represents an update to l1 data fee scalars.
-    /// @custom:value GAS_LIMIT            Represents an update to gas limit on L2.
-    /// @custom:value UNSAFE_BLOCK_SIGNER  Represents an update to the signer key for unsafe
-    ///                                    block distrubution.
+    /// @custom:value BATCHER                  Represents an update to the batcher hash.
+    /// @custom:value FEE_SCALARS              Represents an update to l1 data fee scalars.
+    /// @custom:value GAS_LIMIT                Represents an update to gas limit on L2.
+    /// @custom:value UNSAFE_BLOCK_SIGNER      Represents an update to the signer key for unsafe
+    ///                                        block distrubution.
+    /// @custom:value DA_FOOTPRINT_GAS_SCALAR  Represents an update to the DA footprint gas scalar.
     enum UpdateType {
         BATCHER,
         FEE_SCALARS,
         GAS_LIMIT,
         UNSAFE_BLOCK_SIGNER,
         EIP_1559_PARAMS,
-        OPERATOR_FEE_PARAMS
+        OPERATOR_FEE_PARAMS,
+        DA_FOOTPRINT_GAS_SCALAR
     }
 
     /// @notice Struct representing the addresses of L1 system contracts. These should be the
@@ -129,6 +131,9 @@ contract SystemConfig is ProxyAdminOwnedBase, OwnableUpgradeable, Reinitializabl
     /// @notice The operator fee constant.
     uint64 public operatorFeeConstant;
 
+    // @notice The DA footprint gas scalar.
+    uint32 public daFootprintGasScalar;
+
     /// @notice The L2 chain ID that this SystemConfig configures.
     uint256 public l2ChainId;
 
@@ -142,9 +147,9 @@ contract SystemConfig is ProxyAdminOwnedBase, OwnableUpgradeable, Reinitializabl
     event ConfigUpdate(uint256 indexed version, UpdateType indexed updateType, bytes data);
 
     /// @notice Semantic version.
-    /// @custom:semver 3.4.0
+    /// @custom:semver 3.5.0
     function version() public pure virtual returns (string memory) {
-        return "3.4.0";
+        return "3.5.0";
     }
 
     /// @notice Constructs the SystemConfig contract.
@@ -433,6 +438,17 @@ contract SystemConfig is ProxyAdminOwnedBase, OwnableUpgradeable, Reinitializabl
 
         bytes memory data = abi.encode(uint256(_operatorFeeScalar) << 64 | _operatorFeeConstant);
         emit ConfigUpdate(VERSION, UpdateType.OPERATOR_FEE_PARAMS, data);
+    }
+
+    function setDAFootprintGasScalar(uint32 _daFootprintGasScalar) external onlyOwner {
+        _setDAFootprintGasScalar(_daFootprintGasScalar);
+    }
+
+    function _setDAFootprintGasScalar(uint32 _dAFootprintGasScalar) internal {
+        daFootprintGasScalar = _dAFootprintGasScalar;
+
+        bytes memory data = abi.encode(_dAFootprintGasScalar);
+        emit ConfigUpdate(VERSION, UpdateType.DA_FOOTPRINT_GAS_SCALAR, data);
     }
 
     /// @notice Sets the start block in a backwards compatible way. Proxies

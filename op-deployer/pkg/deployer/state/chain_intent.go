@@ -70,6 +70,7 @@ type ChainIntent struct {
 	AdditionalDisputeGames     []AdditionalDisputeGame   `json:"dangerousAdditionalDisputeGames" toml:"dangerousAdditionalDisputeGames,omitempty"`
 	OperatorFeeScalar          uint32                    `json:"operatorFeeScalar,omitempty" toml:"operatorFeeScalar,omitempty"`
 	OperatorFeeConstant        uint64                    `json:"operatorFeeConstant,omitempty" toml:"operatorFeeConstant,omitempty"`
+	DAFootprintGasScalar       uint32                    `json:"daFootprintGasScalar,omitempty" toml:"daFootprintGasScalar,omitempty"`
 	L1StartBlockHash           *common.Hash              `json:"l1StartBlockHash,omitempty" toml:"l1StartBlockHash,omitempty"`
 
 	// Optional. For development purposes only. Only enabled if the operation mode targets a genesis-file output.
