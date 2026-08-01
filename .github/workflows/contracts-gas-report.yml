@@ -1,9 +1,10 @@
 name: contracts-gas-report
 
-# Cadence: the report runs the full optimized contracts test suite, so it stays off the PR path
-# (see .github/CLAUDE.md, "Choosing where a new job runs"). It runs post-merge on develop to keep a
-# continuous record, and can be dispatched manually against any branch when a change needs a gas
-# check. It gates nothing — the required checks are all CircleCI jobs.
+# Cadence: the report runs the full optimized contracts test suite, so it never runs on the PR path
+# by default (see .github/CLAUDE.md, "Choosing where a new job runs"). It runs post-merge on develop
+# to keep a continuous record, can be dispatched manually against any branch, and can be requested
+# on a PR by applying the `gas-report` label. It gates nothing — the required checks are all
+# CircleCI jobs.
 on:
   push:
     branches:
@@ -14,6 +15,16 @@ on:
       - 'mise.toml'
       - '.github/workflows/contracts-gas-report.yml'
       - '.github/scripts/gas-report-diff.py'
+  # Opt-in per PR: labelling with `gas-report` runs the report and diffs it against the base branch.
+  # Deliberately no `paths:` filter here — the label *is* the filter. A path filter would make the
+  # label silently do nothing on a PR that touches contracts indirectly (a submodule bump, a
+  # solidity dependency, an unlisted directory), which is worse than spending the compute someone
+  # explicitly asked for.
+  pull_request:
+    branches:
+      - develop
+    types:
+      - labeled
   workflow_dispatch:
 
 permissions:
@@ -27,6 +38,10 @@ jobs:
   gas-report:
     name: forge gas report
     runs-on: ubuntu-latest
+    # Every label added to a PR starts this workflow; only the one we care about should cost a
+    # runner. Gating the whole job (rather than the individual steps) means an unrelated label
+    # finishes in seconds.
+    if: github.event_name != 'pull_request' || github.event.label.name == 'gas-report'
     # Two full suite runs when diffing; one when not.
     timeout-minutes: 180
     defaults:
@@ -34,11 +49,14 @@ jobs:
         shell: bash
         working-directory: packages/contracts-bedrock
     env:
-      # A diff needs a base to compare against. A push to develop *is* the base, so only a manual
-      # run on some other branch gets one. Comparing develop against its own previous commit would
-      # mean either a second run of the parent commit or trusting an artifact from an earlier
-      # workflow run, and neither is worth the compute for a report nothing gates.
-      SHOULD_DIFF: ${{ github.event_name == 'workflow_dispatch' && github.ref_name != 'develop' }}
+      # A diff needs a base to compare against. A labelled PR always has one. A push to develop *is*
+      # the base, so only a manual run on some other branch gets one — comparing develop against its
+      # own previous commit would mean either a second run of the parent commit or trusting an
+      # artifact from an earlier workflow run, and neither is worth the compute for a report nothing
+      # gates.
+      SHOULD_DIFF: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref_name != 'develop') }}
+      # The PR's target branch; `develop` for the other triggers, where github.base_ref is empty.
+      BASE_REF: ${{ github.base_ref || 'develop' }}
     steps:
       - name: Harden the runner
         uses: step-security/harden-runner@95d9a5deda9de15063e7595e9719c11c38c90ae2 # v2
@@ -48,6 +66,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@71cf2267d89c5cb81562390fa70a37fa40b1305e # v6
         with:
+          # On a pull_request event this is the merge ref, which is what the base branch will
+          # actually get — the right thing to measure against the base branch's tip.
           # forge-std pulls in ds-test, so the submodules have to be fetched recursively.
           submodules: recursive
 
@@ -71,18 +91,18 @@ jobs:
           set -o pipefail
           just gas-report 2>&1 | tee gas-report.txt
 
-      - name: Checkout develop
+      - name: Checkout the base branch
         if: env.SHOULD_DIFF == 'true'
         uses: actions/checkout@71cf2267d89c5cb81562390fa70a37fa40b1305e # v6
         with:
-          ref: develop
+          ref: ${{ env.BASE_REF }}
           path: base
           submodules: recursive
 
-      - name: Run tests with gas reporting on develop
+      - name: Run tests with gas reporting on the base branch
         id: base
         if: env.SHOULD_DIFF == 'true'
-        # A broken or slow develop — or one whose mise.toml pins a forge this runner has not
+        # A broken or slow base branch — or one whose mise.toml pins a forge this runner has not
         # installed — must not throw away the report for this branch, so the failure is absorbed
         # here and the diff step branches on the outcome instead.
         continue-on-error: true
@@ -91,16 +111,19 @@ jobs:
           set -o pipefail
           just gas-report 2>&1 | tee "$GITHUB_WORKSPACE/packages/contracts-bedrock/gas-report-base.txt"
 
-      - name: Compare against develop
+      - name: Compare against the base branch
         id: diff
         if: env.SHOULD_DIFF == 'true' && steps.base.outcome == 'success'
         continue-on-error: true
         working-directory: .
+        # Branch names are attacker-controlled on a fork PR, so they reach the script through the
+        # runner's own environment variables rather than a ${{ }} interpolation into the shell.
         run: |
           python3 .github/scripts/gas-report-diff.py \
             packages/contracts-bedrock/gas-report-base.txt \
             packages/contracts-bedrock/gas-report.txt \
-            --head-label "$GITHUB_REF_NAME" \
+            --base-label "$BASE_REF" \
+            --head-label "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" \
             > packages/contracts-bedrock/gas-diff.md
 
       - name: Write gas report to job summary
@@ -123,11 +146,13 @@ jobs:
             if [ -s gas-diff.md ]; then
               cat gas-diff.md
             elif [ "$SHOULD_DIFF" != 'true' ]; then
-              echo "_No diff: a comparison against \`develop\` runs on manual dispatch of a branch"
-              echo "other than \`develop\`._"
+              echo "_No diff: a comparison against the base branch runs when a pull request is"
+              echo "labelled \`gas-report\`, or on manual dispatch of a branch other than"
+              echo "\`develop\`._"
             else
-              echo "_The comparison against \`develop\` could not be produced — check the"
-              echo "\`Run tests with gas reporting on develop\` and \`Compare against develop\` steps._"
+              echo "_The comparison against \`$BASE_REF\` could not be produced — check the"
+              echo "\`Run tests with gas reporting on the base branch\` and \`Compare against the"
+              echo "base branch\` steps._"
             fi
             echo
             if [ ! -s "$tables" ]; then
