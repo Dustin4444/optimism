@@ -91,7 +91,7 @@ test-dev *ARGS: build-go-ffi
 # and their gas numbers say nothing about deployed contracts. Invariant tests are excluded
 # because they dominate the runtime and their sequences produce no meaningful per-function gas.
 gas-report *ARGS: build-go-ffi
-  forge test --gas-report --no-match-path "./test/invariants/**" {{ARGS}}
+  forge test --gas-report --no-match-path "test/invariants/**" {{ARGS}}
 
 # Default block number for the forked upgrade path.
 # Block numbers are calculated deterministically based on the current day.
