@@ -86,6 +86,13 @@ test *ARGS: build-go-ffi
 test-dev *ARGS: build-go-ffi
   FOUNDRY_PROFILE=lite forge test {{ARGS}}
 
+# Runs the contract tests with a gas report. Deliberately uses the default profile so the
+# reported numbers come from optimized bytecode; the lite/liteci profiles disable the optimizer
+# and their gas numbers say nothing about deployed contracts. Invariant tests are excluded
+# because they dominate the runtime and their sequences produce no meaningful per-function gas.
+gas-report *ARGS: build-go-ffi
+  forge test --gas-report --no-match-path "./test/invariants/**" {{ARGS}}
+
 # Default block number for the forked upgrade path.
 # Block numbers are calculated deterministically based on the current day.
 # The block is set to approximately 00:00 UTC of the current day.
