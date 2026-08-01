@@ -13,6 +13,7 @@ on:
       - 'op-core/superchain/**'
       - 'mise.toml'
       - '.github/workflows/contracts-gas-report.yml'
+      - '.github/scripts/gas-report-diff.py'
   workflow_dispatch:
 
 permissions:
@@ -26,11 +27,18 @@ jobs:
   gas-report:
     name: forge gas report
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Two full suite runs when diffing; one when not.
+    timeout-minutes: 180
     defaults:
       run:
         shell: bash
         working-directory: packages/contracts-bedrock
+    env:
+      # A diff needs a base to compare against. A push to develop *is* the base, so only a manual
+      # run on some other branch gets one. Comparing develop against its own previous commit would
+      # mean either a second run of the parent commit or trusting an artifact from an earlier
+      # workflow run, and neither is worth the compute for a report nothing gates.
+      SHOULD_DIFF: ${{ github.event_name == 'workflow_dispatch' && github.ref_name != 'develop' }}
     steps:
       - name: Harden the runner
         uses: step-security/harden-runner@95d9a5deda9de15063e7595e9719c11c38c90ae2 # v2
@@ -42,6 +50,10 @@ jobs:
         with:
           # forge-std pulls in ds-test, so the submodules have to be fetched recursively.
           submodules: recursive
+
+      - name: Self-test the gas diff script
+        working-directory: .
+        run: python3 .github/scripts/gas-report-diff-test.py
 
       - name: Install pinned tools
         uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
@@ -59,11 +71,44 @@ jobs:
           set -o pipefail
           just gas-report 2>&1 | tee gas-report.txt
 
+      - name: Checkout develop
+        if: env.SHOULD_DIFF == 'true'
+        uses: actions/checkout@71cf2267d89c5cb81562390fa70a37fa40b1305e # v6
+        with:
+          ref: develop
+          path: base
+          submodules: recursive
+
+      - name: Run tests with gas reporting on develop
+        id: base
+        if: env.SHOULD_DIFF == 'true'
+        # A broken or slow develop — or one whose mise.toml pins a forge this runner has not
+        # installed — must not throw away the report for this branch, so the failure is absorbed
+        # here and the diff step branches on the outcome instead.
+        continue-on-error: true
+        working-directory: base/packages/contracts-bedrock
+        run: |
+          set -o pipefail
+          just gas-report 2>&1 | tee "$GITHUB_WORKSPACE/packages/contracts-bedrock/gas-report-base.txt"
+
+      - name: Compare against develop
+        id: diff
+        if: env.SHOULD_DIFF == 'true' && steps.base.outcome == 'success'
+        continue-on-error: true
+        working-directory: .
+        run: |
+          python3 .github/scripts/gas-report-diff.py \
+            packages/contracts-bedrock/gas-report-base.txt \
+            packages/contracts-bedrock/gas-report.txt \
+            --head-label "$GITHUB_REF_NAME" \
+            > packages/contracts-bedrock/gas-diff.md
+
       - name: Write gas report to job summary
         if: always() && steps.gas.conclusion != 'skipped'
         env:
-          # GitHub rejects a step summary over 1 MiB; leave headroom for the surrounding markdown.
-          MAX_SUMMARY_BYTES: '900000'
+          # GitHub rejects a step summary over 1 MiB; leave headroom for the diff and the markdown
+          # around it. The diff itself is bounded by the script's --max-rows.
+          MAX_SUMMARY_BYTES: '800000'
         run: |
           tables="$RUNNER_TEMP/gas-tables.txt"
           # Keep only forge's gas tables; the test output above them is already in the log and in
@@ -75,10 +120,22 @@ jobs:
             echo "\`just gas-report\` in \`packages/contracts-bedrock\` at commit \`$GITHUB_SHA\`."
             echo "The full test output is attached to this run as the \`gas-report\` artifact."
             echo
+            if [ -s gas-diff.md ]; then
+              cat gas-diff.md
+            elif [ "$SHOULD_DIFF" != 'true' ]; then
+              echo "_No diff: a comparison against \`develop\` runs on manual dispatch of a branch"
+              echo "other than \`develop\`._"
+            else
+              echo "_The comparison against \`develop\` could not be produced — check the"
+              echo "\`Run tests with gas reporting on develop\` and \`Compare against develop\` steps._"
+            fi
+            echo
             if [ ! -s "$tables" ]; then
               echo "No gas tables were produced — the run most likely failed before the tests"
               echo "finished. Check the artifact for the full output."
             else
+              echo "<details><summary>Full gas report for this branch</summary>"
+              echo
               echo '```'
               if [ "$(wc -c < "$tables")" -gt "$MAX_SUMMARY_BYTES" ]; then
                 head -c "$MAX_SUMMARY_BYTES" "$tables"
@@ -87,6 +144,8 @@ jobs:
                 cat "$tables"
               fi
               echo '```'
+              echo
+              echo "</details>"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -95,6 +154,18 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: gas-report
-          path: packages/contracts-bedrock/gas-report.txt
+          # gas-report-base.txt only exists on a run that diffs.
+          path: |
+            packages/contracts-bedrock/gas-report.txt
+            packages/contracts-bedrock/gas-report-base.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload gas diff
+        if: always() && steps.diff.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gas-diff
+          path: packages/contracts-bedrock/gas-diff.md
           if-no-files-found: error
           retention-days: 14
