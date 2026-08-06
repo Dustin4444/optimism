@@ -3,7 +3,7 @@ FROM golang:1.26.5-bookworm AS go-base
 # go install fetches modules with no built-in retry; loop so a transient module proxy drop doesn't flake CI.
 RUN n=0; until go install github.com/tomwright/dasel/v2/cmd/dasel@master; do n=$((n+1)); [ "$n" -ge 5 ] && exit 1; echo "go install retry $n/5 in 10s" >&2; sleep 10; done
 
-FROM debian:12.7-slim AS base
+FROM debian:12.13-slim AS base
 
 SHELL ["/bin/bash", "-c"]
 
@@ -21,7 +21,7 @@ RUN source $HOME/.profile && rustup update nightly
 RUN curl -L --retry 5 --retry-all-errors --retry-delay 2 https://foundry.paradigm.xyz | bash
 RUN foundryup
 
-FROM debian:12.7-slim
+FROM debian:12.13-slim
 
 ENV PATH=/root/.cargo/bin:/root/.foundry/bin:$PATH
 ENV DEBIAN_FRONTEND=noninteractive
